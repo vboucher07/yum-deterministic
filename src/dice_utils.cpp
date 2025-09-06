@@ -100,7 +100,6 @@ bool GenerateRerollProbabilities(const char* filename) {
     
     // Calculate and write probabilities
     for (int start = 0; start < 252; start++) {
-        if (start % 50 == 0) std::cout << "  " << start << "/252" << std::endl;
         
         for (int mask = 0; mask < 32; mask++) {
             for (int end = 0; end < 252; end++) {
