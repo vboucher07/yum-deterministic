@@ -7,26 +7,21 @@
 StateIndexMap::StateIndexMap() {}
 
 bool StateIndexMap::generate() {
-    std::cout << "Generating state index mapping..." << std::endl;
+    std::cout << "Generating states..." << std::endl;
     
-    // Generate all possible GameStates
     const uint32_t MAX_STATES = 1599264;
     std::vector<GameState> allStates(MAX_STATES);
     uint32_t totalStates = GenerateAllStates(allStates.data());
     
-    // Extract keys and build mapping
     std::vector<uint32_t> keys;
     keys.reserve(totalStates);
-    
     for (uint32_t i = 0; i < totalStates; i++) {
         keys.push_back(allStates[i].value);
     }
     
-    // Sort and remove duplicates
     std::sort(keys.begin(), keys.end());
     keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
     
-    // Build hash table
     key_to_index.clear();
     index_to_key.clear();
     index_to_key.reserve(keys.size());
@@ -36,7 +31,7 @@ bool StateIndexMap::generate() {
         index_to_key.push_back(keys[i]);
     }
     
-    std::cout << "Generated mapping for " << keys.size() << " states" << std::endl;
+    std::cout << "Built mapping for " << keys.size() << " states" << std::endl;
     return true;
 }
 
@@ -86,6 +81,6 @@ bool StateIndexMap::loadFromFile(const char* filename) {
         key_to_index[index_to_key[i]] = i;
     }
     
-    std::cout << "Loaded mapping for " << numKeys << " states" << std::endl;
+    std::cout << "Loaded " << numKeys << " state mappings" << std::endl;
     return file.good();
 }

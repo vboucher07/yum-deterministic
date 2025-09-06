@@ -4,35 +4,34 @@
 #include "utils.h"
 #include "state_generation.h"
 #include "state_index_map.h"
+#include "types.h"
 
 void printUsage(const char* programName) {
     std::cout << "Usage: " << programName << " [command]" << std::endl;
     std::cout << "Commands:" << std::endl;
     std::cout << "  generate       Generate state index mapping" << std::endl;
+    std::cout << "  generate-reroll Generate reroll probabilities table" << std::endl;
     std::cout << "  hello          Default hello world" << std::endl;
 }
 
 void generateMapping() {
-    std::cout << "=== Generating State Index Mapping ===" << std::endl;
-    
     StateIndexMap mapping;
-    if (!mapping.generate()) {
+    if (!mapping.generate() || !mapping.saveToFile("output/state_mapping.dat")) {
         std::cerr << "Failed to generate state mapping!" << std::endl;
         return;
     }
-    
-    if (!mapping.saveToFile("output/state_mapping.dat")) {
-        std::cerr << "Failed to save state mapping!" << std::endl;
-        return;
+    std::cout << "Generated " << mapping.getNumStates() << " state mappings" << std::endl;
+}
+
+void generateRerollProbabilities() {
+    if (!GenerateRerollProbabilities("output/reroll_probabilities.dat")) {
+        std::cerr << "Failed to generate reroll probabilities!" << std::endl;
     }
-    
-    std::cout << "State mapping generated and saved successfully!" << std::endl;
-    std::cout << "Total states: " << mapping.getNumStates() << std::endl;
 }
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        greet("C++ Project");
+        greet("Yum Deterministic AI");
         printUsage(argv[0]);
         return 0;
     }
@@ -41,9 +40,11 @@ int main(int argc, char* argv[]) {
     
     if (command == "generate") {
         generateMapping();
+    } else if (command == "generate-reroll") {
+        generateRerollProbabilities();
     } else if (command == "hello") {
         std::cout << "Hello, World!" << std::endl;
-        greet("C++ Project");
+        greet("Yum Deterministic AI");
     } else {
         std::cout << "Unknown command: " << command << std::endl;
         printUsage(argv[0]);

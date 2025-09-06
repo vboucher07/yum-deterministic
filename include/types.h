@@ -7,7 +7,7 @@
 #include <cstdint>
 
 #define TURN_DICE_ARRAY_SIZE 252 * 3 // 252 possible dice combinations per turn
-#define GAME_STATE_ARRAY_SIZE 500000 // 500000 possible game states
+#define GAME_STATE_ARRAY_SIZE 1599264 // 1599264 possible game states
 
 typedef union {
     uint16_t value;
@@ -20,6 +20,31 @@ typedef union {
         uint8_t reserved : 1;
     } dice;
 } DiceHand;
+
+typedef struct {
+    DiceHand hand;
+    uint8_t turn;
+} TurnDice;
+
+typedef union {
+    uint8_t value;
+    union {
+        struct {
+            uint8_t d1:1;
+            uint8_t d2:1;
+            uint8_t d3:1;
+            uint8_t d4:1;
+            uint8_t d5:1;
+            uint8_t action_type:1;
+            uint8_t reserved:2;
+        } dice;
+        struct {
+            uint8_t category_idx:4;
+            uint8_t action_type:1;
+            uint8_t reserved:3;
+        } category;
+    } bits;
+} Action;
 
 typedef union {
     uint16_t value;
@@ -59,6 +84,12 @@ typedef union {
 void DecryptHand(uint8_t hand, DiceHand& diceHand);
 
 uint8_t EncryptHand(const DiceHand& diceHand);
+
+// Generate and save reroll probabilities table
+bool GenerateRerollProbabilities(const char* filename);
+
+// Load reroll probabilities table
+bool LoadRerollProbabilities(const char* filename, double probabilities[252][32][252]);
 
 
 #endif // TYPES_H
