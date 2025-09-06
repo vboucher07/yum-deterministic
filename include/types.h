@@ -4,6 +4,7 @@
 #define TYPES_H
 
 #include <string>
+#include <cstdint>
 
 #define TURN_DICE_ARRAY_SIZE 252 * 3 // 252 possible dice combinations per turn
 #define GAME_STATE_ARRAY_SIZE 500000 // 500000 possible game states

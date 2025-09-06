@@ -2,6 +2,7 @@
 CXX = g++
 CXXFLAGS = -std=c++17 -Wall -Wextra -g -O2
 INCLUDES = -Iinclude
+LIBS =
 
 # Directories
 SRCDIR = src
@@ -21,7 +22,7 @@ all: $(TARGET)
 
 # Create target executable
 $(TARGET): $(OBJECTS) | $(BINDIR)
-	$(CXX) $(OBJECTS) -o $@
+	$(CXX) $(OBJECTS) $(LIBS) -o $@
 
 # Compile source files to object files
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)

@@ -55,3 +55,6 @@ Makefile.cmake
 
 # Core dumps
 core
+
+# Generated files
+output/
