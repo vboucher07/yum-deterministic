@@ -13,12 +13,16 @@ private:
     
 public:
     StateIndexMap();
+    ~StateIndexMap();
     
     // Generate index mapping from all possible GameStates
     bool generate();
     
     // Get index for a GameState (returns UINT32_MAX if not found)
     uint32_t getIndex(const GameState& state) const;
+    
+    // Get GameState from index
+    GameState getStateFromIndex(uint32_t index) const;
     
     // Get total number of states
     uint32_t getNumStates() const { return index_to_key.size(); }

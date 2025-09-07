@@ -1,5 +1,6 @@
 
 #include "state_generation.h"
+#include "utils.h"
 #include <cstdint>
 
 #define NUM_BONUS_STATES 1851       // unique possible bonus states

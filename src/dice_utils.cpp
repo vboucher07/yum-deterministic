@@ -1,4 +1,5 @@
 #include "types.h"
+#include "utils.h"
 #include <algorithm>
 #include <iostream>
 #include <fstream>
@@ -89,7 +90,7 @@ double CalculateRerollProbability(uint8_t start_hand, uint8_t keep_mask, uint8_t
 
 bool GenerateRerollProbabilities(const char* filename) {
     InitializeDiceLUTs();
-    std::cout << "Generating reroll probabilities..." << std::endl;
+    print("Generating reroll probabilities...");
     
     std::ofstream file(filename, std::ios::binary);
     if (!file) return false;
@@ -109,7 +110,7 @@ bool GenerateRerollProbabilities(const char* filename) {
         }
     }
     
-    std::cout << "Generated 16MB reroll table" << std::endl;
+    print("Generated 16MB reroll table");
     return file.good();
 }
 
@@ -125,6 +126,6 @@ bool LoadRerollProbabilities(const char* filename, double probabilities[252][32]
     // Load probabilities
     file.read(reinterpret_cast<char*>(probabilities), 252 * 32 * 252 * sizeof(double));
     
-    std::cout << "Loaded reroll probabilities" << std::endl;
+    print("Loaded reroll probabilities");
     return file.good();
 }

@@ -1,13 +1,16 @@
 #include "state_index_map.h"
 #include "state_generation.h"
+#include "utils.h"
 #include <iostream>
 #include <fstream>
 #include <algorithm>
 
 StateIndexMap::StateIndexMap() {}
 
+StateIndexMap::~StateIndexMap() {}
+
 bool StateIndexMap::generate() {
-    std::cout << "Generating states..." << std::endl;
+    print("Generating states...");
     
     const uint32_t MAX_STATES = 1599264;
     std::vector<GameState> allStates(MAX_STATES);
@@ -15,6 +18,7 @@ bool StateIndexMap::generate() {
     
     std::vector<uint32_t> keys;
     keys.reserve(totalStates);
+    
     for (uint32_t i = 0; i < totalStates; i++) {
         keys.push_back(allStates[i].value);
     }
@@ -31,7 +35,7 @@ bool StateIndexMap::generate() {
         index_to_key.push_back(keys[i]);
     }
     
-    std::cout << "Built mapping for " << keys.size() << " states" << std::endl;
+    print("Built mapping for " + std::to_string(keys.size()) + " states");
     return true;
 }
 
@@ -41,6 +45,14 @@ uint32_t StateIndexMap::getIndex(const GameState& state) const {
         return UINT32_MAX;
     }
     return it->second;
+}
+
+GameState StateIndexMap::getStateFromIndex(uint32_t index) const {
+    GameState state = {0};
+    if (index < index_to_key.size()) {
+        state.value = index_to_key[index];
+    }
+    return state;
 }
 
 bool StateIndexMap::saveToFile(const char* filename) const {
@@ -81,6 +93,7 @@ bool StateIndexMap::loadFromFile(const char* filename) {
         key_to_index[index_to_key[i]] = i;
     }
     
-    std::cout << "Loaded " << numKeys << " state mappings" << std::endl;
+    print("Loaded " + std::to_string(numKeys) + " state mappings");
+    
     return file.good();
 }
