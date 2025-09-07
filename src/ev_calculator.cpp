@@ -11,11 +11,20 @@
 double EVCalculator::reroll_probabilities[252][32][252];
 bool EVCalculator::probabilities_loaded = false;
 
-EVCalculator::EVCalculator(StateIndexMap* map) : state_map(map), current_ev_table(nullptr), optimal_actions(nullptr), future_ev_table(nullptr), cache_hits(0), cache_misses(0), actions_file(nullptr), ev_file(nullptr) {}
+// Static allocation for all rounds
+float* EVCalculator::all_ev_tables = nullptr;
+uint8_t* EVCalculator::all_action_tables = nullptr;
+bool EVCalculator::tables_allocated = false;
+
+// Static cache arrays (fixed size, no dynamic allocation)
+uint64_t EVCalculator::cache_keys[EVCalculator::CACHE_SIZE];
+double EVCalculator::cache_values[EVCalculator::CACHE_SIZE];
+bool EVCalculator::cache_valid[EVCalculator::CACHE_SIZE];
+size_t EVCalculator::cache_next_slot = 0;
+
+EVCalculator::EVCalculator(StateIndexMap* map) : state_map(map), current_ev_table(nullptr), current_action_table(nullptr), future_ev_table(nullptr), cache_hits(0), cache_misses(0), actions_file(nullptr), ev_file(nullptr) {}
 
 EVCalculator::~EVCalculator() {
-    deallocateEVTable();
-    deallocateFutureEVTable();
     closeOutputFiles();
 }
 
@@ -260,45 +269,75 @@ double EVCalculator::getRerollProbability(uint8_t start_dice, uint8_t keep_mask,
     return reroll_probabilities[start_dice][keep_mask][end_dice];
 }
 
-// EV table management
-void EVCalculator::allocateEVTable() {
-    if (current_ev_table) return;
+// Smart allocation: Only current round + future round (much more reasonable!)
+void EVCalculator::allocateAllTables(uint32_t num_states) {
+    if (tables_allocated) return;
     
-    uint32_t num_states = state_map->getNumStates();
-    size_t table_size = num_states * 252 * 3;
+    size_t entries_per_round = num_states * 252 * 3;
+    size_t total_ev_entries = entries_per_round * 2;  // Only 2 rounds: current + future
+    size_t total_action_entries = entries_per_round * 2;
     
-    current_ev_table = new double[table_size];
-    optimal_actions = new uint8_t[table_size];
+    size_t ev_memory_mb = (total_ev_entries * sizeof(float)) / (1024 * 1024);
+    size_t action_memory_mb = total_action_entries / (1024 * 1024);
+    size_t total_mb = ev_memory_mb + action_memory_mb;
+    
+    print("🧠 Smart allocation (current + future rounds only):");
+    print("   EV tables: " + std::to_string(ev_memory_mb) + "MB (float)");
+    print("   Action tables: " + std::to_string(action_memory_mb) + "MB");
+    print("   Total: " + std::to_string(total_mb) + "MB (~" + std::to_string(total_mb/1024) + "GB)");
+    
+    // Allocate only 2 rounds worth
+    all_ev_tables = new float[total_ev_entries];
+    all_action_tables = new uint8_t[total_action_entries];
     
     // Initialize to 0
-    for (size_t i = 0; i < table_size; i++) {
-        current_ev_table[i] = 0.0;
-        optimal_actions[i] = 0;
+    for (size_t i = 0; i < total_ev_entries; i++) {
+        all_ev_tables[i] = 0.0f;
+    }
+    for (size_t i = 0; i < total_action_entries; i++) {
+        all_action_tables[i] = 0;
+    }
+    
+    tables_allocated = true;
+    print("✅ Smart allocation complete!");
+}
+
+void EVCalculator::deallocateAllTables() {
+    if (tables_allocated) {
+        delete[] all_ev_tables;
+        delete[] all_action_tables;
+        all_ev_tables = nullptr;
+        all_action_tables = nullptr;
+        tables_allocated = false;
     }
 }
 
-void EVCalculator::deallocateEVTable() {
-    delete[] current_ev_table;
-    delete[] optimal_actions;
-    current_ev_table = nullptr;
-    optimal_actions = nullptr;
-}
-
-void EVCalculator::allocateFutureEVTable() {
-    if (future_ev_table) return;
+// Set pointers for current round with 2-round swapping
+void EVCalculator::setCurrentRoundPointers(int round, uint32_t num_states) {
+    if (!tables_allocated) return;
     
-    uint32_t num_states = state_map->getNumStates();
-    future_ev_table = new double[num_states];
+    size_t entries_per_round = num_states * 252 * 3;
     
-    // Initialize to 0
-    for (uint32_t i = 0; i < num_states; i++) {
-        future_ev_table[i] = 0.0;
+    // Use round parity to decide which half of the buffer to use
+    bool use_first_half = (round % 2 == 0);
+    
+    if (use_first_half) {
+        current_ev_table = all_ev_tables;  // First half
+        current_action_table = all_action_tables;
+        future_ev_table = all_ev_tables + entries_per_round;  // Second half
+    } else {
+        current_ev_table = all_ev_tables + entries_per_round;  // Second half
+        current_action_table = all_action_tables + entries_per_round;
+        future_ev_table = all_ev_tables;  // First half
     }
-}
-
-void EVCalculator::deallocateFutureEVTable() {
-    delete[] future_ev_table;
-    future_ev_table = nullptr;
+    
+    // Clear current round data to 0
+    for (size_t i = 0; i < entries_per_round; i++) {
+        current_ev_table[i] = 0.0f;
+        current_action_table[i] = 0;
+    }
+    
+    print("  Round " + std::to_string(round) + " using " + (use_first_half ? "first" : "second") + " buffer half");
 }
 
 size_t EVCalculator::getEVIndex(uint32_t state_index, uint8_t dice_index, int turn) {
@@ -312,7 +351,7 @@ bool EVCalculator::loadFutureEVFromRound(int round) {
         return true;
     }
     
-    allocateFutureEVTable();
+    // Future EV table now handled by static allocation
     
     // For now, keep future EV as 0 (terminal calculation)
     // TODO: Load from file when implementing multi-round EV
@@ -478,17 +517,32 @@ uint64_t EVCalculator::getCacheKey(uint32_t state_index, uint8_t dice_index, int
 }
 
 void EVCalculator::clearCache() {
-    ev_cache.clear();
-    validation_cache.clear();
+    // Clear static cache arrays
+    for (size_t i = 0; i < CACHE_SIZE; i++) {
+        cache_valid[i] = false;
+    }
+    cache_next_slot = 0;
     cache_hits = 0;
     cache_misses = 0;
 }
 
+// Static cache doesn't need size limiting (fixed size)
+
 void EVCalculator::printCacheStats() {
     uint64_t total = cache_hits + cache_misses;
     double hit_rate = total > 0 ? (double)cache_hits / total * 100.0 : 0.0;
+    
+    // Count valid entries in static cache
+    size_t valid_entries = 0;
+    for (size_t i = 0; i < CACHE_SIZE; i++) {
+        if (cache_valid[i]) valid_entries++;
+    }
+    
+    double cache_mb = CACHE_SIZE * (sizeof(uint64_t) + sizeof(double) + sizeof(bool)) / (1024.0 * 1024.0);
+    
     print("Cache stats: " + formatNumber(cache_hits) + " hits, " + formatNumber(cache_misses) + " misses (" + 
-          std::to_string((int)hit_rate) + "% hit rate)");
+          std::to_string((int)hit_rate) + "% hit rate), " + formatNumber(valid_entries) + "/" + formatNumber(CACHE_SIZE) + " entries (~" + 
+          std::to_string((int)cache_mb) + "MB static)");
 }
 
 // File output management
@@ -547,13 +601,13 @@ void EVCalculator::writeRoundData(int round, const std::vector<uint32_t>& states
                 size_t idx = getEVIndex(state_index, dice_index, turn);
                 
                 // Always write action (1 byte)
-                uint8_t action = optimal_actions[idx];
+                uint8_t action = current_action_table[idx];
                 actions_file->write(reinterpret_cast<const char*>(&action), 1);
                 
-                // Conditionally write EV (8 bytes)
+                // Conditionally write EV (4 bytes for float)
                 if (ev_file) {
-                    double ev = current_ev_table[idx];
-                    ev_file->write(reinterpret_cast<const char*>(&ev), sizeof(double));
+                    float ev = current_ev_table[idx];
+                    ev_file->write(reinterpret_cast<const char*>(&ev), sizeof(float));
                 }
             }
         }
@@ -581,6 +635,9 @@ void EVCalculator::calculateOptimalActions(const char* output_filename, bool sav
         return;
     }
     
+    // STATIC ALLOCATION: Allocate all tables upfront
+    allocateAllTables(state_map->getNumStates());
+    
     // Initialize progress tracking
     initializeProgress();
     
@@ -591,13 +648,8 @@ void EVCalculator::calculateOptimalActions(const char* output_filename, bool sav
         // OPTIMIZATION: Clear cache between rounds to save memory
         clearCache();
         
-        // Load future EV from next round
-        if (!loadFutureEVFromRound(round)) {
-            printError("Failed to load future EV for round " + std::to_string(round));
-            return;
-        }
-        
-        allocateEVTable();
+        // Set pointers for this round (no allocation, just pointer arithmetic)
+        setCurrentRoundPointers(round, state_map->getNumStates());
         
         // Get all states with (round - 1) categories filled
         std::vector<uint32_t> states = getStatesWithCategoriesFilled(round - 1);
@@ -613,12 +665,14 @@ void EVCalculator::calculateOptimalActions(const char* output_filename, bool sav
                 // Calculate EV for each turn
                 for (int turn = 1; turn <= 3; turn++) {
                     double ev = calculateEV(state_index, dice_index, turn);
-                    current_ev_table[getEVIndex(state_index, dice_index, turn - 1)] = ev;
+                    current_ev_table[getEVIndex(state_index, dice_index, turn - 1)] = (float)ev;
                     
                     calculations_in_batch++;
                     if (calculations_in_batch >= batch_size) {
                         updateProgress(calculations_in_batch);
                         calculations_in_batch = 0;
+                        
+                        // Static cache is fixed size, no limiting needed
                     }
                 }
             }
@@ -635,9 +689,6 @@ void EVCalculator::calculateOptimalActions(const char* output_filename, bool sav
         std::cout << std::endl;
         print("Round " + std::to_string(round) + " completed");
         printCacheStats();
-        
-        deallocateEVTable();
-        deallocateFutureEVTable();
     }
     
     std::cout << std::endl;
@@ -645,23 +696,31 @@ void EVCalculator::calculateOptimalActions(const char* output_filename, bool sav
     auto total_seconds = std::chrono::duration_cast<std::chrono::seconds>(total_time).count();
     
     closeOutputFiles();
+    deallocateAllTables();
     print("Completed in " + formatTime(total_seconds) + " (" + formatNumber(completed_calculations) + " calculations)");
 }
 
 double EVCalculator::calculateEV(uint32_t state_index, uint8_t dice_index, int turn) {
-    // Check cache first (original version)
+    // Check static hash cache
     uint64_t cache_key = getCacheKey(state_index, dice_index, turn);
-    auto cached = ev_cache.find(cache_key);
-    if (cached != ev_cache.end()) {
+    size_t hash_index = cache_key % CACHE_SIZE;
+    
+    // Check if the slot contains our key (simple hash table with replacement)
+    if (cache_valid[hash_index] && cache_keys[hash_index] == cache_key) {
         cache_hits++;
-        return cached->second;
+        return cache_values[hash_index];
     }
     
-    // Calculate and cache result
+    // Cache miss - calculate result
     cache_misses++;
     double result = (turn == 3) ? calculateTurn3EV(state_index, dice_index) 
                                 : calculateTurn12EV(state_index, dice_index, turn);
-    ev_cache[cache_key] = result;
+    
+    // Store in static cache (direct hash, replace if collision)
+    cache_keys[hash_index] = cache_key;
+    cache_values[hash_index] = result;
+    cache_valid[hash_index] = true;
+    
     return result;
 }
 
@@ -687,7 +746,7 @@ double EVCalculator::calculateTurn3EV(uint32_t state_index, uint8_t dice_index) 
         }
     }
     
-    optimal_actions[getEVIndex(state_index, dice_index, 2)] = best_action;
+    current_action_table[getEVIndex(state_index, dice_index, 2)] = best_action;
     return best_ev;
 }
 
@@ -716,6 +775,6 @@ double EVCalculator::calculateTurn12EV(uint32_t state_index, uint8_t dice_index,
         }
     }
     
-    optimal_actions[getEVIndex(state_index, dice_index, turn - 1)] = best_action;
+    current_action_table[getEVIndex(state_index, dice_index, turn - 1)] = best_action;
     return best_ev;
 }

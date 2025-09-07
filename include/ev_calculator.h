@@ -14,12 +14,15 @@ private:
     static double reroll_probabilities[252][32][252];  // Static array in data segment
     static bool probabilities_loaded;
     
-    // EV table for current round only (memory optimization)
-    double* current_ev_table;  // [state_index * 252 * 3 + dice_index * 3 + turn]
-    uint8_t* optimal_actions;  // [state_index * 252 * 3 + dice_index * 3 + turn]
+    // STATIC ALLOCATION: All rounds allocated upfront using floats for 16GB budget
+    static float* all_ev_tables;        // [round][state * 252 * 3] - all rounds at once
+    static uint8_t* all_action_tables;  // [round][state * 252 * 3] - all rounds at once
+    static bool tables_allocated;
     
-    // Future round EV lookup (loaded from next round's results)
-    double* future_ev_table;   // [state_index] -> best EV for that state in next round
+    // Current round pointers (point into static arrays)
+    float* current_ev_table;
+    uint8_t* current_action_table;
+    float* future_ev_table;
     
     // Progress tracking
     std::chrono::steady_clock::time_point start_time;
@@ -30,9 +33,12 @@ private:
     int total_rounds;
     
     
-    // OPTIMIZATION: Memoization caches
-    std::unordered_map<uint64_t, double> ev_cache;
-    std::unordered_map<uint64_t, bool> validation_cache;
+    // STATIC CACHE: Fixed size to prevent memory leaks
+    static const size_t CACHE_SIZE = 1000000;  // 1M entries max
+    static uint64_t cache_keys[CACHE_SIZE];
+    static double cache_values[CACHE_SIZE];
+    static bool cache_valid[CACHE_SIZE];
+    static size_t cache_next_slot;
     uint64_t cache_hits;
     uint64_t cache_misses;
     
@@ -40,11 +46,10 @@ private:
     std::ofstream* actions_file;
     std::ofstream* ev_file;
     
-    // Helper functions
-    void allocateEVTable();
-    void deallocateEVTable();
-    void allocateFutureEVTable();
-    void deallocateFutureEVTable();
+    // Static allocation management
+    static void allocateAllTables(uint32_t num_states);
+    static void deallocateAllTables();
+    void setCurrentRoundPointers(int round, uint32_t num_states);
     size_t getEVIndex(uint32_t state_index, uint8_t dice_index, int turn);
     
     // Round management
@@ -59,7 +64,7 @@ private:
     std::string formatTime(double seconds);
     std::string formatNumber(uint64_t number);
     
-    // OPTIMIZATION: Memoization helpers
+    // STATIC CACHE: Memoization helpers
     uint64_t getCacheKey(uint32_t state_index, uint8_t dice_index, int turn);
     void clearCache();
     void printCacheStats();
